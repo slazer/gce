@@ -226,7 +226,7 @@ const (
 	TYPE = "post"
 	DISTANCE = "200km"
 	// Needs to update
-	//PROJECT_ID = "quiet-antler-199302"
+        PROJECT_ID = "quiet-antler-199302"
 	//BT_INSTANCE = "around-post"
 	// Needs to update this URL if you deploy it to cloud.
 	ES_URL = "http://35.184.157.151:9200"
