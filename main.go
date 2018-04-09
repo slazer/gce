@@ -251,7 +251,7 @@ const (
 	PROJECT_ID = "quiet-antler-199302"
 	//BT_INSTANCE = "around-post"
 	// Needs to update this URL if you deploy it to cloud.
-	ES_URL = "http://35.192.122.251:9200"
+	ES_URL = "http://35.184.238.118:9200"
 	BUCKET_NAME = "post-image-199302"
 )
 
