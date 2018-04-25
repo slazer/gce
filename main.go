@@ -16,7 +16,8 @@ import(
 	"github.com/auth0/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
-
+	"github.com/go-redis/redis"
+	"time"
 
 )
 
@@ -33,6 +34,78 @@ type Post struct {
 	Url    string `json:"url"`
 
 }
+
+const (
+	INDEX = "around"
+	TYPE = "post"
+	DISTANCE = "200km"
+	// Needs to update
+	PROJECT_ID = "quiet-antler-199302"
+	//BT_INSTANCE = "around-post"
+	// Needs to update this URL if you deploy it to cloud.
+	ES_URL = "http://35.188.15.68:9200"
+	BUCKET_NAME = "post-image-199302"
+	ENABLE_MEMCACHE = true
+	REDIS_URL       = "redis-19122.c1.us-central1-2.gce.cloud.redislabs.com:19122"
+)
+
+var mySigningKey = []byte("secret")
+
+
+func main() {
+	// Create a client
+	client, err := elastic.NewClient(elastic.SetURL(ES_URL), elastic.SetSniff(false))
+	if err != nil {
+		panic(err)
+		return
+	}
+
+	// Use the IndexExists service to check if a specified index exists.
+	exists, err := client.IndexExists(INDEX).Do()
+	if err != nil {
+		panic(err)
+	}
+	if !exists {
+		// Create a new index.
+		mapping := `{
+                    "mappings":{
+                           "post":{
+                                  "properties":{
+                                         "location":{
+                                                "type":"geo_point"
+                                         }
+                                  }
+                           }
+                    }
+             }
+             `
+		_, err := client.CreateIndex(INDEX).Body(mapping).Do()
+		if err != nil {
+			// Handle error
+			panic(err)
+		}
+	}
+	fmt.Println("Started service successfully")
+	// Here we are instantiating the gorilla/mux router
+	r := mux.NewRouter()
+
+	var jwtMiddleware = jwtmiddleware.New(jwtmiddleware.Options{
+		ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+			return mySigningKey, nil
+		},
+		SigningMethod: jwt.SigningMethodHS256,
+	})
+
+	r.Handle("/post", jwtMiddleware.Handler(http.HandlerFunc(handlerPost))).Methods("POST")
+	r.Handle("/search", jwtMiddleware.Handler(http.HandlerFunc(handlerSearch))).Methods("GET")
+	r.Handle("/login", http.HandlerFunc(loginHandler)).Methods("POST")
+	r.Handle("/signup", http.HandlerFunc(signupHandler)).Methods("POST")
+
+	http.Handle("/", r)
+	log.Fatal(http.ListenAndServe(":8080", nil))
+
+}
+
 
 func handlerPost(w http.ResponseWriter, r *http.Request) {
 	//// Parse from body of request to get a json object.
@@ -186,74 +259,9 @@ func saveToES(p *Post, id string) {
 
 
 
-var mySigningKey = []byte("secret")
 
 
-func main() {
-	// Create a client
-	client, err := elastic.NewClient(elastic.SetURL(ES_URL), elastic.SetSniff(false))
-	if err != nil {
-		panic(err)
-		return
-	}
 
-	// Use the IndexExists service to check if a specified index exists.
-	exists, err := client.IndexExists(INDEX).Do()
-	if err != nil {
-		panic(err)
-	}
-	if !exists {
-		// Create a new index.
-		mapping := `{
-                    "mappings":{
-                           "post":{
-                                  "properties":{
-                                         "location":{
-                                                "type":"geo_point"
-                                         }
-                                  }
-                           }
-                    }
-             }
-             `
-		_, err := client.CreateIndex(INDEX).Body(mapping).Do()
-		if err != nil {
-			// Handle error
-			panic(err)
-		}
-	}
-	fmt.Println("Started service successfully")
-	// Here we are instantiating the gorilla/mux router
-	r := mux.NewRouter()
-
-	var jwtMiddleware = jwtmiddleware.New(jwtmiddleware.Options{
-		ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
-			return mySigningKey, nil
-		},
-		SigningMethod: jwt.SigningMethodHS256,
-	})
-
-	r.Handle("/post", jwtMiddleware.Handler(http.HandlerFunc(handlerPost))).Methods("POST")
-	r.Handle("/search", jwtMiddleware.Handler(http.HandlerFunc(handlerSearch))).Methods("GET")
-	r.Handle("/login", http.HandlerFunc(loginHandler)).Methods("POST")
-	r.Handle("/signup", http.HandlerFunc(signupHandler)).Methods("POST")
-
-	http.Handle("/", r)
-	log.Fatal(http.ListenAndServe(":8080", nil))
-
-}
-
-const (
-	INDEX = "around"
-	TYPE = "post"
-	DISTANCE = "200km"
-	// Needs to update
-	PROJECT_ID = "quiet-antler-199302"
-	//BT_INSTANCE = "around-post"
-	// Needs to update this URL if you deploy it to cloud.
-	ES_URL = "http://35.184.238.118:9200"
-	BUCKET_NAME = "post-image-199302"
-)
 
 
 
@@ -269,6 +277,26 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Printf( "Search received: %f %f %s\n", lat, lon, ran)
+
+	key := r.URL.Query().Get("lat") + ":" + r.URL.Query().Get("lon") + ":" + ran
+	if ENABLE_MEMCACHE {
+		rs_client := redis.NewClient(&redis.Options{
+			Addr:     REDIS_URL,
+			Password: "fasTA9L927qdKGVnIImSpzcXzKVLCj1j", // no password set
+			DB:       0,  // use default DB
+		})
+
+		val, err := rs_client.Get(key).Result()
+		if err != nil {
+			fmt.Printf("Redis cannot find the key %s as %v.\n", key, err)
+		} else {
+			fmt.Printf("Redis find the key %s.\n", key)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(val))
+			return
+		}
+	}
+
 
 	// Create a client
 	client, err := elastic.NewClient(elastic.SetURL(ES_URL), elastic.SetSniff(false))
@@ -316,6 +344,24 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 		return
 	}
+
+
+	if ENABLE_MEMCACHE {
+		rs_client := redis.NewClient(&redis.Options{
+			Addr:     REDIS_URL,
+			Password: "fasTA9L927qdKGVnIImSpzcXzKVLCj1j", // no password set
+			DB:       0,  // use default DB
+		})
+
+		// Set the cache expiration to be 30 seconds
+		err := rs_client.Set(key, string(js), time.Second*30).Err()
+		if err != nil {
+			fmt.Printf("Redis cannot save the key %s as %v.\n", key, err)
+		}
+
+	}
+
+
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
