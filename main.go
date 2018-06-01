@@ -43,7 +43,7 @@ const (
 	PROJECT_ID = "quiet-antler-199302"
 	//BT_INSTANCE = "around-post"
 	// Needs to update this URL if you deploy it to cloud.
-	ES_URL = "http://35.188.15.68:9200"
+	ES_URL = "http://35.224.55.98:9200"
 	BUCKET_NAME = "post-image-199302"
 	ENABLE_MEMCACHE = true
 	REDIS_URL       = "redis-19122.c1.us-central1-2.gce.cloud.redislabs.com:19122"
@@ -365,6 +365,7 @@ func handlerSearch(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Write(js)
 }
 
